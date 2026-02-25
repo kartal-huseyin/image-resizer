@@ -5,8 +5,11 @@
 Use the CLI to crop images by clipping equally from all four sides to maintain a centered composition.
 
 ```1:1:image_clip.py
-python image_clip.py input.jpg output.jpg --width 180 --height 100
+python image_clip.py input.jpg --target 180:100 --output output.jpg
 ```
+
+If you omit `--output`, the CLI saves the file under `./output/` using the format
+`output_{width}x{height}_{timestamp}.jpg`.
 
 The CLI prints a summary after processing:
 
