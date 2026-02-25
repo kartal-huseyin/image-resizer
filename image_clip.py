@@ -50,45 +50,65 @@ def parse_target(value: str) -> tuple[int, int]:
     return width, height
 
 
-def build_default_output(target_width: int, target_height: int) -> Path:
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"output_{target_width}x{target_height}_{timestamp}.jpg"
+def build_default_output(input_path: Path, target_width: int, target_height: int, timestamp: str) -> Path:
+    filename = (
+        f"output_{input_path.stem}_{target_width}x{target_height}_{timestamp}"
+        f"{input_path.suffix.lower()}"
+    )
     return Path("output") / filename
 
 
 @click.command()
-@click.argument("input_path", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.argument(
+    "input_paths",
+    nargs=-1,
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+)
 @click.option("--target", "target", required=True, callback=lambda _, __, value: parse_target(value))
 @click.option("--output", "output_path", type=click.Path(dir_okay=False, path_type=Path))
-def clip_resize(input_path: Path, target: tuple[int, int], output_path: Path | None) -> None:
+def clip_resize(input_paths: tuple[Path, ...], target: tuple[int, int], output_path: Path | None) -> None:
     """Resize by clipping equally from each side to center the composition."""
-    if input_path.suffix.lower() not in SUPPORTED_FORMATS:
-        raise click.ClickException("Input format must be PNG, JPG, or JPEG.")
+    if not input_paths:
+        raise click.ClickException("At least one input image is required.")
 
     target_width, target_height = target
-    final_output_path = output_path or build_default_output(target_width, target_height)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    failures: list[str] = []
 
-    if final_output_path.suffix.lower() not in SUPPORTED_FORMATS:
-        raise click.ClickException("Output format must be PNG, JPG, or JPEG.")
+    if output_path is not None and len(input_paths) > 1:
+        raise click.ClickException("--output can only be used with a single input image.")
 
-    input_size = input_path.stat().st_size
+    for input_path in input_paths:
+        if input_path.suffix.lower() not in SUPPORTED_FORMATS:
+            failures.append(f"{input_path}: input format must be PNG, JPG, or JPEG.")
+            continue
 
-    try:
-        with Image.open(input_path) as image:
-            processed = process_image(image, target_width, target_height)
-            final_output_path.parent.mkdir(parents=True, exist_ok=True)
-            processed.save(final_output_path)
-            input_dimensions = (image.width, image.height)
-    except ValueError as exc:
-        raise click.ClickException(str(exc)) from exc
+        final_output_path = output_path or build_default_output(
+            input_path, target_width, target_height, timestamp
+        )
 
-    output_size = final_output_path.stat().st_size
+        if final_output_path.suffix.lower() not in SUPPORTED_FORMATS:
+            failures.append(f"{input_path}: output format must be PNG, JPG, or JPEG.")
+            continue
 
-    click.echo(f"Input size: {input_dimensions[0]}x{input_dimensions[1]}")
-    click.echo(f"Input file size: {format_kb(input_size)}")
-    click.echo(f"Output size: {target_width}x{target_height}")
-    click.echo(f"Output file size: {format_kb(output_size)}")
-    click.echo(f"Path: {final_output_path}")
+        try:
+            with Image.open(input_path) as image:
+                processed = process_image(image, target_width, target_height)
+                final_output_path.parent.mkdir(parents=True, exist_ok=True)
+                processed.save(final_output_path)
+        except Exception as exc:
+            failures.append(f"{input_path}: {exc}")
+            continue
+
+        arrow = click.style("→", fg="yellow")
+        success_message = f"✓ Processed {input_path.name} {arrow} {final_output_path.name}"
+        click.echo(click.style(success_message, fg="green", bold=True))
+
+    if failures:
+        click.echo(click.style("Errors:", fg="red", bold=True))
+        for failure in failures:
+            click.echo(click.style(failure, fg="red"))
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":
