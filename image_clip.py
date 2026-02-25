@@ -13,12 +13,21 @@ def format_kb(size_bytes: int) -> str:
     return f"{size_kb:.0f}KB"
 
 
-def center_crop(image: Image.Image, target_width: int, target_height: int) -> Image.Image:
+def process_image(image: Image.Image, target_width: int, target_height: int) -> Image.Image:
+    # If target is larger than input in either dimension, we need to pad
     if target_width > image.width or target_height > image.height:
-        raise ValueError(
-            "Target size must be less than or equal to input size for cropping."
-        )
-
+        # Create new white background image
+        new_image = Image.new("RGB", (target_width, target_height), (255, 255, 255))
+        
+        # Calculate position to center the original image
+        left = (target_width - image.width) // 2
+        top = (target_height - image.height) // 2
+        
+        # Paste original image onto white background
+        new_image.paste(image, (left, top))
+        return new_image
+    
+    # Otherwise, perform the center crop as before
     left = (image.width - target_width) // 2
     top = (image.height - target_height) // 2
     right = left + target_width
@@ -66,9 +75,9 @@ def clip_resize(input_path: Path, target: tuple[int, int], output_path: Path | N
 
     try:
         with Image.open(input_path) as image:
-            cropped = center_crop(image, target_width, target_height)
+            processed = process_image(image, target_width, target_height)
             final_output_path.parent.mkdir(parents=True, exist_ok=True)
-            cropped.save(final_output_path)
+            processed.save(final_output_path)
             input_dimensions = (image.width, image.height)
     except ValueError as exc:
         raise click.ClickException(str(exc)) from exc
